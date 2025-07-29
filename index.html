@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>체스판 + 모든 룰 완전 구현</title>
+  <title>체스판 + 기물 + 엄격 이동 규칙 + 차례 관리 + 체크/체크메이트 + 앙파상 + 프로모션 + 캐슬링 + 하이라이트 + AI</title>
   <style>
     #board {
       display: grid;
@@ -26,174 +26,659 @@
       transition: background-color 0.3s;
       border: 1px solid #555;
       box-sizing: border-box;
-      position: relative;
     }
-    .white { background-color: #f0d9b5; }
-    .black { background-color: #b58863; }
-    .square:hover { filter: brightness(1.15); }
-    .selected { outline: 3px solid #ff5722; outline-offset: -3px; }
-    .dot {
-      width: 15px;
-      height: 15px;
-      background-color: rgba(0,0,0,0.3);
-      border-radius: 50%;
-      position: absolute;
+    .white {
+      background-color: #f0d9b5;
     }
-    #turnIndicator {
-      text-align:center;
-      font-size:20px;
-      margin-bottom:10px;
+    .black {
+      background-color: #b58863;
     }
-    #promotionModal {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: white;
-      border: 2px solid #444;
-      padding: 20px;
-      z-index: 1000;
-      display: none;
+    .square:hover {
+      filter: brightness(1.15);
     }
-    #promotionModal button {
-      font-size: 24px;
-      margin: 5px;
+    .selected {
+      outline: 3px solid #ff5722;
+      outline-offset: -3px;
+    }
+    .castle {
+      box-shadow: 0 0 10px 2px #0097a7 inset;
+    }
+    .promote-choice {
+      font-size: 32px; 
+      margin: 10px; 
+      cursor: pointer; 
+      padding: 12px 18px; 
+      border-radius: 10px; 
+      border: 2px solid #0097a7; 
+      background: #f0d9b5;
+      display: inline-block;
+    }
+    .highlight {
+      box-shadow: 0 0 0 6px #ffeb3b inset;
     }
   </style>
+  <!-- Stockfish.js CDN 추가 -->
+  <script src="https://unpkg.com/stockfish"></script>
 </head>
 <body>
   <h1 style="text-align:center; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-    체스판 + 모든 룰 완전 구현
+    체스판 + 기물 + 엄격 이동 규칙 + 차례 관리 + 체크/체크메이트 + 앙파상 + 프로모션 + 캐슬링 + 하이라이트 + AI
   </h1>
-  <div id="turnIndicator"></div>
+
+  <div id="turnIndicator" style="text-align:center; font-size:20px; margin-bottom:10px;"></div>
   <div id="board"></div>
-  <div id="promotionModal"></div>
+  <div id="promotionPanel" style="text-align:center; margin-top:20px;"></div>
 
   <script>
-    const boardElement = document.getElementById("board");
-    const turnIndicator = document.getElementById("turnIndicator");
-    const promotionModal = document.getElementById("promotionModal");
+    const PIECES = {
+      'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 'p': '♟',
+      'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔', 'P': '♙'
+    };
 
-    const promotionPieces = { w: ["Q", "R", "B", "N"], b: ["q", "r", "b", "n"] };
-    let board = [], selected = null, legalMoves = [];
-    let turn = "w", promotionTarget = null;
+    let boardState = [
+      ['r','n','b','q','k','b','n','r'],
+      ['p','p','p','p','p','p','p','p'],
+      ['','','','','','','',''],
+      ['','','','','','','',''],
+      ['','','','','','','',''],
+      ['','','','','','','',''],
+      ['P','P','P','P','P','P','P','P'],
+      ['R','N','B','Q','K','B','N','R']
+    ];
 
-    function isUpper(c) {
-      return c === c.toUpperCase();
-    }
+    const boardEl = document.getElementById("board");
+    let selected = null;
+    let currentTurn = 'white'; // 백이 먼저 둠
 
-    function inBounds(x, y) {
-      return x >= 0 && x < 8 && y >= 0 && y < 8;
-    }
+    // 앙파상 상태
+    let enPassant = null; // {row, col} 폰이 한 번에 두 칸 움직인 칸(잡을 수 있는 좌표)
 
-    function createBoard() {
-      const initial = [
-        ["r", "n", "b", "q", "k", "b", "n", "r"],
-        ["p", "p", "p", "p", "p", "p", "p", "p"],
-        ["", "", "", "", "", "", "", ""],
-        ["", "", "", "", "", "", "", ""],
-        ["", "", "", "", "", "", "", ""],
-        ["", "", "", "", "", "", "", ""],
-        ["P", "P", "P", "P", "P", "P", "P", "P"],
-        ["R", "N", "B", "Q", "K", "B", "N", "R"],
-      ];
-      board = JSON.parse(JSON.stringify(initial));
-    }
+    // 각 기물 이동 이력(캐슬링용)
+    let pieceMoved = {
+      'K': false, 'R0': false, 'R7': false, // 백 왕, 좌룩, 우룩
+      'k': false, 'r0': false, 'r7': false  // 흑 왕, 좌룩, 우룩
+    };
 
-    function renderBoard() {
-      boardElement.innerHTML = "";
-      for (let y = 0; y < 8; y++) {
-        for (let x = 0; x < 8; x++) {
-          const square = document.createElement("div");
-          square.className = `square ${(x + y) % 2 === 0 ? "white" : "black"}`;
-          square.dataset.x = x;
-          square.dataset.y = y;
-          const piece = board[y][x];
-          square.textContent = piece;
+    // 프로모션 대기 중 상태
+    let promotionPending = null; // {row, col, color}
 
-          if (selected && selected.x == x && selected.y == y) {
-            square.classList.add("selected");
+    // 하이라이트용 legalMoves 캐시
+    let highlightSquares = [];
+
+    // AI용 Stockfish 엔진 생성
+    const stockfish = STOCKFISH();
+    let aiColor = "black"; // 흑이 AI
+
+    // FEN 변환 함수 (boardState를 FEN 문자열로 변환)
+    function boardToFEN(board, turn, ep, castleObj) {
+      let fen = "";
+      for(let r=0; r<8; r++) {
+        let empty = 0;
+        for(let c=0; c<8; c++) {
+          let p = board[r][c];
+          if(p === "") {
+            empty++;
+          } else {
+            if(empty > 0) { fen += empty; empty = 0; }
+            fen += p;
           }
+        }
+        if(empty > 0) fen += empty;
+        if(r < 7) fen += "/";
+      }
+      // 차례
+      fen += " " + (turn === "white" ? "w" : "b");
+      // 캐슬링 권리
+      let castle = "";
+      if(!castleObj) castleObj = pieceMoved;
+      if(!castleObj.K && board[7][4] === 'K') {
+        if(!castleObj.R7 && board[7][7] === 'R') castle += "K";
+        if(!castleObj.R0 && board[7][0] === 'R') castle += "Q";
+      }
+      if(!castleObj.k && board[0][4] === 'k') {
+        if(!castleObj.r7 && board[0][7] === 'r') castle += "k";
+        if(!castleObj.r0 && board[0][0] === 'r') castle += "q";
+      }
+      if (castle === "") castle = "-";
+      fen += " " + castle;
+      // 앙파상
+      if (ep) {
+        // 앙파상 좌표를 algebraic notation으로 바꿈
+        const files = "abcdefgh";
+        fen += " " + files[ep.col] + (8-ep.row);
+      } else {
+        fen += " -";
+      }
+      // halfmove clock, fullmove number은 0으로
+      fen += " 0 1";
+      return fen;
+    }
 
-          for (const move of legalMoves) {
-            if (move.x === x && move.y === y) {
-              const dot = document.createElement("div");
-              dot.className = "dot";
-              square.appendChild(dot);
+    // AI 턴이면 자동으로 두기
+    function aiMoveIfNeeded() {
+      if (promotionPending) return;
+      if (currentTurn !== aiColor) return;
+      let fen = boardToFEN(boardState, currentTurn, enPassant, pieceMoved);
+      stockfish.onmessage = function(event) {
+        if (event && event.data && event.data.startsWith("bestmove")) {
+          const move = event.data.split(" ")[1];
+          if(move === "(none)") return; // 무승부/체크메이트
+          // algebraic 좌표를 인덱스로 변환
+          let from = move.substring(0,2), to = move.substring(2,4);
+          const files = "abcdefgh";
+          let fromCol = files.indexOf(from[0]);
+          let fromRow = 8 - parseInt(from[1]);
+          let toCol = files.indexOf(to[0]);
+          let toRow = 8 - parseInt(to[1]);
+          // 프로모션 표기
+          let promotion = move.length > 4 ? move[4] : null;
+          // 선택 후 이동
+          selected = [fromRow, fromCol];
+          // 프로모션이면, move의 5번째 글자가 q/r/b/n
+          if (promotion) {
+            // onSquareClick에서 promotionPending이 걸리고, renderPromotion에서 AI 선택(여기선 퀸)
+            onSquareClick(toRow, toCol);
+            // 프로모션 패널 뜨면 자동으로 퀸 선택
+            if (promotionPending) {
+              let promoPiece = aiColor === "white" ? promotion.toUpperCase() : promotion.toLowerCase();
+              boardState[promotionPending.row][promotionPending.col] = promoPiece;
+              promotionPending = null;
+              currentTurn = currentTurn === 'white' ? 'black' : 'white';
+              renderBoard();
+              if(isKingInCheck(boardState, currentTurn)) {
+                if(isCheckmate(boardState, currentTurn)) {
+                  alert((currentTurn === 'white' ? '백' : '흑') + ' 체크메이트! 게임 종료');
+                } else {
+                  alert((currentTurn === 'white' ? '백' : '흑') + ' 체크입니다!');
+                }
+              }
+              setTimeout(aiMoveIfNeeded, 400);
+            }
+          } else {
+            onSquareClick(toRow, toCol);
+            setTimeout(aiMoveIfNeeded, 400);
+          }
+        }
+      };
+      stockfish.postMessage("uci");
+      stockfish.postMessage("position fen " + fen);
+      stockfish.postMessage("go depth 10");
+    }
+
+    function isUpper(c) { return c === c.toUpperCase(); }
+    function isLower(c) { return c === c.toLowerCase(); }
+
+    function inBounds(r, c) {
+      return r >= 0 && r < 8 && c >= 0 && c < 8;
+    }
+
+    function isOpponent(piece1, piece2) {
+      if(!piece1 || !piece2) return false;
+      return (isUpper(piece1) && isLower(piece2)) || (isLower(piece1) && isUpper(piece2));
+    }
+
+    function getLegalMoves(row, col, board, ignoreCastle) {
+      const piece = board[row][col];
+      if (!piece) return [];
+
+      const moves = [];
+      const isWhite = isUpper(piece);
+
+      const directions = {
+        rook: [[1,0],[-1,0],[0,1],[0,-1]],
+        bishop: [[1,1],[1,-1],[-1,1],[-1,-1]],
+        knight: [[-2,1],[-2,-1],[-1,2],[-1,-2],[1,2],[1,-2],[2,1],[2,-1]],
+        king: [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]
+      };
+
+      switch(piece.toLowerCase()) {
+        case 'p': {
+          let dir = isWhite ? -1 : 1;
+          let startRow = isWhite ? 6 : 1;
+          // 기본 한 칸
+          if(inBounds(row+dir,col) && board[row+dir][col] === '') {
+            moves.push([row+dir,col]);
+            // 첫 수 두 칸
+            if(row === startRow && board[row+2*dir][col] === '') {
+              moves.push([row+2*dir,col]);
             }
           }
-
-          square.addEventListener("click", () => onSquareClick(x, y));
-          boardElement.appendChild(square);
-        }
-      }
-      turnIndicator.textContent = `${turn === "w" ? "백" : "흑"}의 턴입니다.`;
-    }
-
-    function showPromotionModal(x, y, isWhite) {
-      promotionModal.innerHTML = "<div>프로모션할 기물을 선택하세요:</div>";
-      promotionPieces[isWhite ? "w" : "b"].forEach(piece => {
-        const btn = document.createElement("button");
-        btn.textContent = piece;
-        btn.onclick = () => {
-          board[y][x] = piece;
-          promotionTarget = null;
-          promotionModal.style.display = "none";
-          turn = turn === "w" ? "b" : "w";
-          renderBoard();
-        };
-        promotionModal.appendChild(btn);
-      });
-      promotionModal.style.display = "block";
-    }
-
-    function onSquareClick(x, y) {
-      if (promotionTarget) return; // 프로모션 중엔 다른 입력 무시
-      const piece = board[y][x];
-      if (selected) {
-        if (legalMoves.some(m => m.x === x && m.y === y)) {
-          const movingPiece = board[selected.y][selected.x];
-          board[y][x] = movingPiece;
-          board[selected.y][selected.x] = "";
-
-          // 폰 프로모션 조건 확인
-          if ((movingPiece === "P" && y === 0) || (movingPiece === "p" && y === 7)) {
-            promotionTarget = { x, y };
-            renderBoard();
-            showPromotionModal(x, y, movingPiece === "P");
-            selected = null;
-            legalMoves = [];
-            return;
+          // 잡기
+          for(let dc of [-1,1]) {
+            let nr = row+dir, nc = col+dc;
+            // 일반 잡기
+            if(inBounds(nr,nc) && isOpponent(piece, board[nr][nc])) {
+              moves.push([nr,nc]);
+            }
+            // 앙파상
+            if(enPassant && enPassant.row === row && enPassant.col === nc && nr === (isWhite?2:5)) {
+              if(row === (isWhite?3:4)) moves.push([nr,nc,"enpassant"]);
+            }
           }
-
-          turn = turn === "w" ? "b" : "w";
+          break;
         }
-        selected = null;
-        legalMoves = [];
-      } else {
-        if ((turn === "w" && isUpper(piece)) || (turn === "b" && !isUpper(piece) && piece !== "")) {
-          selected = { x, y };
-          legalMoves = getLegalMoves(x, y);
+        case 'r':
+          for(let [dr, dc] of directions.rook) {
+            let nr = row + dr;
+            let nc = col + dc;
+            while(inBounds(nr,nc)) {
+              if(board[nr][nc] === '') {
+                moves.push([nr,nc]);
+              } else {
+                if(isOpponent(piece, board[nr][nc])) moves.push([nr,nc]);
+                break;
+              }
+              nr += dr; nc += dc;
+            }
+          }
+          break;
+
+        case 'n':
+          for(let [dr, dc] of directions.knight) {
+            let nr = row+dr, nc=col+dc;
+            if(inBounds(nr,nc) && (board[nr][nc] === '' || isOpponent(piece, board[nr][nc]))) {
+              moves.push([nr,nc]);
+            }
+          }
+          break;
+
+        case 'b':
+          for(let [dr, dc] of directions.bishop) {
+            let nr = row + dr;
+            let nc = col + dc;
+            while(inBounds(nr,nc)) {
+              if(board[nr][nc] === '') {
+                moves.push([nr,nc]);
+              } else {
+                if(isOpponent(piece, board[nr][nc])) moves.push([nr,nc]);
+                break;
+              }
+              nr += dr; nc += dc;
+            }
+          }
+          break;
+
+        case 'q':
+          for(let [dr, dc] of [...directions.rook, ...directions.bishop]) {
+            let nr = row + dr;
+            let nc = col + dc;
+            while(inBounds(nr,nc)) {
+              if(board[nr][nc] === '') {
+                moves.push([nr,nc]);
+              } else {
+                if(isOpponent(piece, board[nr][nc])) moves.push([nr,nc]);
+                break;
+              }
+              nr += dr; nc += dc;
+            }
+          }
+          break;
+
+        case 'k': {
+          for(let [dr, dc] of directions.king) {
+            let nr = row+dr;
+            let nc = col+dc;
+            if(inBounds(nr,nc) && (board[nr][nc] === '' || isOpponent(piece, board[nr][nc]))) {
+              moves.push([nr,nc]);
+            }
+          }
+          // 캐슬링 가능성 추가
+          if(!ignoreCastle) {
+            if(isWhite && !pieceMoved.K && row === 7 && col === 4) {
+              // 킹사이드(오른쪽)
+              if(!pieceMoved.R7 && board[7][5] === '' && board[7][6] === '' && board[7][7] === 'R') {
+                // 체크가 안될 때만
+                if(
+                  !isSquareAttacked(board, 7, 4, 'black') &&
+                  !isSquareAttacked(board, 7, 5, 'black') &&
+                  !isSquareAttacked(board, 7, 6, 'black')
+                ) {
+                  moves.push([7,6,"castle"]);
+                }
+              }
+              // 퀸사이드(왼쪽)
+              if(!pieceMoved.R0 && board[7][3] === '' && board[7][2] === '' && board[7][1] === '' && board[7][0] === 'R') {
+                if(
+                  !isSquareAttacked(board, 7, 4, 'black') &&
+                  !isSquareAttacked(board, 7, 3, 'black') &&
+                  !isSquareAttacked(board, 7, 2, 'black')
+                ) {
+                  moves.push([7,2,"castle"]);
+                }
+              }
+            }
+            if(!isWhite && !pieceMoved.k && row === 0 && col === 4) {
+              // 킹사이드(오른쪽)
+              if(!pieceMoved.r7 && board[0][5] === '' && board[0][6] === '' && board[0][7] === 'r') {
+                if(
+                  !isSquareAttacked(board, 0, 4, 'white') &&
+                  !isSquareAttacked(board, 0, 5, 'white') &&
+                  !isSquareAttacked(board, 0, 6, 'white')
+                ) {
+                  moves.push([0,6,"castle"]);
+                }
+              }
+              // 퀸사이드(왼쪽)
+              if(!pieceMoved.r0 && board[0][3] === '' && board[0][2] === '' && board[0][1] === '' && board[0][0] === 'r') {
+                if(
+                  !isSquareAttacked(board, 0, 4, 'white') &&
+                  !isSquareAttacked(board, 0, 3, 'white') &&
+                  !isSquareAttacked(board, 0, 2, 'white')
+                ) {
+                  moves.push([0,2,"castle"]);
+                }
+              }
+            }
+          }
+          break;
         }
       }
-      renderBoard();
-    }
 
-    function getLegalMoves(x, y) {
-      const piece = board[y][x];
-      const moves = [];
-      const dir = isUpper(piece) ? -1 : 1;
-      if (piece.toLowerCase() === "p") {
-        const nextY = y + dir;
-        if (inBounds(x, nextY) && board[nextY][x] === "") {
-          moves.push({ x, y: nextY });
-        }
-      }
-      // 추가 기물 이동은 이후 구현됨
       return moves;
     }
 
-    createBoard();
+    function findKing(board, color) {
+      const kingChar = color === 'white' ? 'K' : 'k';
+      for(let r=0; r<8; r++) {
+        for(let c=0; c<8; c++) {
+          if(board[r][c] === kingChar) return [r,c];
+        }
+      }
+      return null;
+    }
+
+    function isSquareAttacked(board, r, c, attackerColor) {
+      for(let rr=0; rr<8; rr++) {
+        for(let cc=0; cc<8; cc++) {
+          const piece = board[rr][cc];
+          if(!piece) continue;
+          if(attackerColor === 'white' ? isUpper(piece) : isLower(piece)) {
+            let moves = getLegalMoves(rr, cc, board, true);
+            for(let m of moves) {
+              if(m[0] === r && m[1] === c) return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    function isKingInCheck(board, color) {
+      const kingPos = findKing(board, color);
+      if(!kingPos) return false;
+      const [kr, kc] = kingPos;
+      const attackerColor = color === 'white' ? 'black' : 'white';
+      return isSquareAttacked(board, kr, kc, attackerColor);
+    }
+
+    function getLegalMovesWithCheck(row, col, board) {
+      const possibleMoves = getLegalMoves(row, col, board, false);
+      const piece = board[row][col];
+      if(!piece) return [];
+
+      const isWhite = isUpper(piece);
+      const color = isWhite ? 'white' : 'black';
+
+      const legalMoves = [];
+
+      for(const m of possibleMoves) {
+        const [nr, nc, special] = m;
+        let boardCopy = board.map(r => r.slice());
+
+        // 앙파상 처리
+        if(special === "enpassant") {
+          boardCopy[nr][nc] = boardCopy[row][col];
+          boardCopy[row][col] = '';
+          boardCopy[row][nc] = ''; 
+        }
+        // 캐슬링 처리
+        else if(special === "castle") {
+          boardCopy[nr][nc] = boardCopy[row][col];
+          boardCopy[row][col] = '';
+          if(color === "white") {
+            if(nc === 6) { // 킹사이드
+              boardCopy[7][5] = boardCopy[7][7];
+              boardCopy[7][7] = '';
+            } else { // 퀸사이드
+              boardCopy[7][3] = boardCopy[7][0];
+              boardCopy[7][0] = '';
+            }
+          } else {
+            if(nc === 6) {
+              boardCopy[0][5] = boardCopy[0][7];
+              boardCopy[0][7] = '';
+            } else {
+              boardCopy[0][3] = boardCopy[0][0];
+              boardCopy[0][0] = '';
+            }
+          }
+        }
+        // 일반
+        else {
+          boardCopy[nr][nc] = boardCopy[row][col];
+          boardCopy[row][col] = '';
+        }
+
+        if(!isKingInCheck(boardCopy, color)) {
+          legalMoves.push(m);
+        }
+      }
+      return legalMoves;
+    }
+
+    function isCheckmate(board, color) {
+      for(let r=0; r<8; r++) {
+        for(let c=0; c<8; c++) {
+          const piece = board[r][c];
+          if(!piece) continue;
+          if(color === 'white' ? isUpper(piece) : isLower(piece)) {
+            const moves = getLegalMovesWithCheck(r,c,board);
+            if(moves.length > 0) return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    function renderTurn() {
+      const el = document.getElementById('turnIndicator');
+      el.textContent = currentTurn === 'white' ? "백 차례입니다." : "흑 차례입니다.";
+    }
+
+    function renderBoard() {
+      boardEl.innerHTML = "";
+      // 하이라이트 칸 계산
+      let highlights = [];
+      if(selected) {
+        highlights = getLegalMovesWithCheck(selected[0], selected[1], boardState).map(m => [m[0], m[1]]);
+      }
+      highlightSquares = highlights;
+      for(let row=0; row<8; row++) {
+        for(let col=0; col<8; col++) {
+          const square = document.createElement("div");
+          square.classList.add("square");
+          if ((row + col) % 2 === 0) square.classList.add("white");
+          else square.classList.add("black");
+
+          const piece = boardState[row][col];
+          if(piece) square.textContent = PIECES[piece];
+
+          if(selected && selected[0] === row && selected[1] === col) {
+            square.classList.add("selected");
+          }
+
+          // 캐슬링 가능 표시
+          if(selected) {
+            const moves = getLegalMovesWithCheck(selected[0], selected[1], boardState);
+            for(let m of moves) {
+              if(m[0] === row && m[1] === col && m[2] === "castle")
+                square.classList.add("castle");
+            }
+          }
+          // 하이라이트 표시
+          if(highlightSquares.some(([r, c]) => r === row && c === col)) {
+            square.classList.add("highlight");
+          }
+
+          square.dataset.row = row;
+          square.dataset.col = col;
+
+          square.addEventListener("click", () => {
+            onSquareClick(row, col);
+          });
+
+          boardEl.appendChild(square);
+        }
+      }
+      renderTurn();
+      // 프로모션 UI
+      renderPromotion();
+      // AI 턴 체크
+      setTimeout(aiMoveIfNeeded, 400);
+    }
+
+    function renderPromotion() {
+      const panel = document.getElementById('promotionPanel');
+      panel.innerHTML = "";
+      if(promotionPending) {
+        const color = promotionPending.color;
+        const isWhite = color === "white";
+        const row = promotionPending.row, col = promotionPending.col;
+        panel.innerHTML = "<b>프로모션 선택:</b> ";
+        const choices = isWhite ? ['Q','R','B','N'] : ['q','r','b','n'];
+        choices.forEach(ch => {
+          const btn = document.createElement('span');
+          btn.className = "promote-choice";
+          btn.textContent = PIECES[ch];
+          btn.onclick = () => {
+            boardState[row][col] = ch;
+            promotionPending = null;
+            currentTurn = currentTurn === 'white' ? 'black' : 'white';
+            renderBoard();
+            if(isKingInCheck(boardState, currentTurn)) {
+              if(isCheckmate(boardState, currentTurn)) {
+                alert((currentTurn === 'white' ? '백' : '흑') + ' 체크메이트! 게임 종료');
+              } else {
+                alert((currentTurn === 'white' ? '백' : '흑') + ' 체크입니다!');
+              }
+            }
+          };
+          panel.appendChild(btn);
+        });
+      }
+    }
+
+    function onSquareClick(row, col) {
+      if(promotionPending) return; // 프로모션 대기 중엔 클릭 불가
+
+      const piece = boardState[row][col];
+
+      if(selected === null) {
+        if(piece && ((currentTurn === 'white' && isUpper(piece)) || (currentTurn === 'black' && isLower(piece)))) {
+          selected = [row, col];
+          renderBoard();
+        }
+      } else {
+        if(row === selected[0] && col === selected[1]) {
+          selected = null;
+          renderBoard();
+          return;
+        }
+
+        const legalMoves = getLegalMovesWithCheck(selected[0], selected[1], boardState);
+        for(const m of legalMoves) {
+          const [r, c, special] = m;
+          if(r === row && c === col) {
+            // 이동 전 상태
+            const movingPiece = boardState[selected[0]][selected[1]];
+            // 앙파상 처리
+            if(special === "enpassant") {
+              boardState[row][col] = movingPiece;
+              boardState[selected[0]][selected[1]] = '';
+              boardState[selected[0]][col] = '';
+              enPassant = null;
+            }
+            // 캐슬링 처리
+            else if(special === "castle") {
+              boardState[row][col] = movingPiece;
+              boardState[selected[0]][selected[1]] = '';
+              if(currentTurn === "white") {
+                if(col === 6) { // 킹사이드
+                  boardState[7][5] = boardState[7][7];
+                  boardState[7][7] = '';
+                  pieceMoved.R7 = true;
+                } else { // 퀸사이드
+                  boardState[7][3] = boardState[7][0];
+                  boardState[7][0] = '';
+                  pieceMoved.R0 = true;
+                }
+                pieceMoved.K = true;
+              } else {
+                if(col === 6) {
+                  boardState[0][5] = boardState[0][7];
+                  boardState[0][7] = '';
+                  pieceMoved.r7 = true;
+                } else {
+                  boardState[0][3] = boardState[0][0];
+                  boardState[0][0] = '';
+                  pieceMoved.r0 = true;
+                }
+                pieceMoved.k = true;
+              }
+              enPassant = null;
+            }
+            // 일반 이동
+            else {
+              boardState[row][col] = movingPiece;
+              boardState[selected[0]][selected[1]] = '';
+              // 폰이 두 칸 움직였으면 앙파상 가능 위치 기록
+              if(movingPiece === "P" && selected[0] === 6 && row === 4) {
+                enPassant = {row:4, col:col};
+              } else if(movingPiece === "p" && selected[0] === 1 && row === 3) {
+                enPassant = {row:3, col:col};
+              } else {
+                enPassant = null;
+              }
+              // 프로모션
+              if((movingPiece === "P" && row === 0) || (movingPiece === "p" && row === 7)) {
+                promotionPending = {row, col, color: currentTurn};
+              }
+              // 이동 이력(캐슬링)
+              if(movingPiece === "K") pieceMoved.K = true;
+              if(movingPiece === "k") pieceMoved.k = true;
+              if(movingPiece === "R" && selected[0] === 7 && selected[1] === 0) pieceMoved.R0 = true;
+              if(movingPiece === "R" && selected[0] === 7 && selected[1] === 7) pieceMoved.R7 = true;
+              if(movingPiece === "r" && selected[0] === 0 && selected[1] === 0) pieceMoved.r0 = true;
+              if(movingPiece === "r" && selected[0] === 0 && selected[1] === 7) pieceMoved.r7 = true;
+            }
+
+            selected = null;
+
+            // 턴 넘김(프로모션 대기면 유지)
+            if(!promotionPending) {
+              currentTurn = currentTurn === 'white' ? 'black' : 'white';
+            }
+            renderBoard();
+
+            // 체크/체크메이트 판정
+            if(!promotionPending && isKingInCheck(boardState, currentTurn)) {
+              if(isCheckmate(boardState, currentTurn)) {
+                alert((currentTurn === 'white' ? '백' : '흑') + ' 체크메이트! 게임 종료');
+              } else {
+                alert((currentTurn === 'white' ? '백' : '흑') + ' 체크입니다!');
+              }
+            }
+            return;
+          }
+        }
+        // 자기 기물 선택
+        if(piece && ((currentTurn === 'white' && isUpper(piece)) || (currentTurn === 'black' && isLower(piece)))) {
+          selected = [row, col];
+          renderBoard();
+        } 
+      }
+    }
+
     renderBoard();
   </script>
 </body>
