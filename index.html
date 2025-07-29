@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>ㅇㅇㅇ</title>
+  <title>체스판 + 기물 + 엄격 이동 규칙 + 차례 관리 + 체크/체크메이트 + 앙파상 + 프로모션 + 캐슬링 + 하이라이트 + AI</title>
   <style>
     @font-face {
       font-family: 'NotoChess';
@@ -69,7 +69,6 @@
       box-shadow: 0 0 0 6px #ffeb3b inset;
     }
   </style>
-  <!-- [수정1] Stockfish CDN 경로를 수정: unpkg.com -> cdn.jsdelivr.net -->
   <script src="https://cdn.jsdelivr.net/npm/stockfish@16.1.0/dist/stockfish.js"></script>
 </head>
 <body>
@@ -82,8 +81,6 @@
   <div id="promotionPanel" style="text-align:center; margin-top:20px;"></div>
 
   <script>
-    // [수정2] PIECES 유니코드: U+2654~U+265F는 Chess Symbols (흑백 기물)로, 폰트가 없으면 일반적으로 표시가 안됨.
-    // 폰트가 시스템에 없을 수 있으므로, fallback을 강하게 주고, .square에 font-family를 명확히 지정
     const PIECES = {
       'r': '\u265C', 'n': '\u265E', 'b': '\u265D', 'q': '\u265B', 'k': '\u265A', 'p': '\u265F',
       'R': '\u2656', 'N': '\u2658', 'B': '\u2657', 'Q': '\u2655', 'K': '\u2654', 'P': '\u2659'
@@ -120,11 +117,7 @@
     let highlightSquares = [];
 
     // AI용 Stockfish 엔진 생성
-    // [수정3] Stockfish 인스턴스 생성 방식이 환경에 따라 다름; window.STOCKFISH 혹은 global STOCKFISH
-    // window.STOCKFISH가 undefined라면, window.Stockfish 혹은 그냥 Stockfish()로 시도
-    // 최신 CDN에서는 window.Stockfish
     const stockfish = typeof window !== "undefined" && window.Stockfish ? window.Stockfish() : (typeof STOCKFISH !== "undefined" ? STOCKFISH() : Stockfish());
-
     let aiColor = "black"; // 흑이 AI
 
     // FEN 변환 함수 (boardState를 FEN 문자열로 변환)
@@ -491,8 +484,7 @@
         for(let col=0; col<8; col++) {
           const square = document.createElement("div");
           square.classList.add("square");
-          // [수정4] font-family를 PIECES 유니코드에 맞게 강하게 설정
-          square.style.fontFamily = "'NotoChess', 'Segoe UI Symbol', 'Arial Unicode MS', 'Segoe UI', 'Arial', sans-serif";
+          // font-family 설정을 제거함으로써, 기물 유니코드가 제대로 보임
           if ((row + col) % 2 === 0) square.classList.add("white");
           else square.classList.add("black");
 
