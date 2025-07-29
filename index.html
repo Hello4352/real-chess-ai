@@ -34,7 +34,7 @@
       transition: background-color 0.3s;
       border: 1px solid #555;
       box-sizing: border-box;
-      font-family: 'NotoChess', 'Segoe UI Symbol', 'Arial Unicode MS', 'Segoe UI', 'Arial', sans-serif;
+      /* font-family: 'NotoChess', 'Segoe UI Symbol', 'Arial Unicode MS', 'Segoe UI', 'Arial', sans-serif; */
       line-height: 1;
       color: #222;
     }
@@ -69,7 +69,8 @@
       box-shadow: 0 0 0 6px #ffeb3b inset;
     }
   </style>
-  <script src="https://unpkg.com/stockfish"></script>
+  <!-- [수정1] Stockfish CDN 경로를 수정: unpkg.com -> cdn.jsdelivr.net -->
+  <script src="https://cdn.jsdelivr.net/npm/stockfish@16.1.0/dist/stockfish.js"></script>
 </head>
 <body>
   <h1 style="text-align:center; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
@@ -81,6 +82,8 @@
   <div id="promotionPanel" style="text-align:center; margin-top:20px;"></div>
 
   <script>
+    // [수정2] PIECES 유니코드: U+2654~U+265F는 Chess Symbols (흑백 기물)로, 폰트가 없으면 일반적으로 표시가 안됨.
+    // 폰트가 시스템에 없을 수 있으므로, fallback을 강하게 주고, .square에 font-family를 명확히 지정
     const PIECES = {
       'r': '\u265C', 'n': '\u265E', 'b': '\u265D', 'q': '\u265B', 'k': '\u265A', 'p': '\u265F',
       'R': '\u2656', 'N': '\u2658', 'B': '\u2657', 'Q': '\u2655', 'K': '\u2654', 'P': '\u2659'
@@ -117,7 +120,11 @@
     let highlightSquares = [];
 
     // AI용 Stockfish 엔진 생성
-    const stockfish = STOCKFISH();
+    // [수정3] Stockfish 인스턴스 생성 방식이 환경에 따라 다름; window.STOCKFISH 혹은 global STOCKFISH
+    // window.STOCKFISH가 undefined라면, window.Stockfish 혹은 그냥 Stockfish()로 시도
+    // 최신 CDN에서는 window.Stockfish
+    const stockfish = typeof window !== "undefined" && window.Stockfish ? window.Stockfish() : (typeof STOCKFISH !== "undefined" ? STOCKFISH() : Stockfish());
+
     let aiColor = "black"; // 흑이 AI
 
     // FEN 변환 함수 (boardState를 FEN 문자열로 변환)
@@ -484,6 +491,8 @@
         for(let col=0; col<8; col++) {
           const square = document.createElement("div");
           square.classList.add("square");
+          // [수정4] font-family를 PIECES 유니코드에 맞게 강하게 설정
+          square.style.fontFamily = "'NotoChess', 'Segoe UI Symbol', 'Arial Unicode MS', 'Segoe UI', 'Arial', sans-serif";
           if ((row + col) % 2 === 0) square.classList.add("white");
           else square.classList.add("black");
 
