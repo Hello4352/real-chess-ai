@@ -4,6 +4,14 @@
   <meta charset="UTF-8" />
   <title>체스판 + 기물 + 엄격 이동 규칙 + 차례 관리 + 체크/체크메이트 + 앙파상 + 프로모션 + 캐슬링 + 하이라이트 + AI</title>
   <style>
+    @font-face {
+      font-family: 'NotoChess';
+      src: local('Noto Sans Symbols 2'), local('Segoe UI Symbol'), local('Arial Unicode MS'), local('Noto Color Emoji');
+      unicode-range: U+2654-265F;
+    }
+    body {
+      font-family: 'NotoChess', 'Segoe UI', 'Arial', sans-serif;
+    }
     #board {
       display: grid;
       grid-template-columns: repeat(8, 70px);
@@ -21,11 +29,14 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 44px;
+      font-size: 54px;
       cursor: pointer;
       transition: background-color 0.3s;
       border: 1px solid #555;
       box-sizing: border-box;
+      font-family: 'NotoChess', 'Segoe UI Symbol', 'Arial Unicode MS', 'Segoe UI', 'Arial', sans-serif;
+      line-height: 1;
+      color: #222;
     }
     .white {
       background-color: #f0d9b5;
@@ -52,12 +63,12 @@
       border: 2px solid #0097a7; 
       background: #f0d9b5;
       display: inline-block;
+      font-family: 'NotoChess', 'Segoe UI Symbol', 'Arial Unicode MS', 'Segoe UI', 'Arial', sans-serif;
     }
     .highlight {
       box-shadow: 0 0 0 6px #ffeb3b inset;
     }
   </style>
-  <!-- Stockfish.js CDN 추가 -->
   <script src="https://unpkg.com/stockfish"></script>
 </head>
 <body>
@@ -70,12 +81,9 @@
   <div id="promotionPanel" style="text-align:center; margin-top:20px;"></div>
 
   <script>
-    // 폰트가 이모지 체스 기물을 제대로 보여주지 않는 경우를 방지하기 위해 폰트 추가
-    document.body.style.fontFamily = "'Segoe UI Symbol', 'Noto Color Emoji', 'Arial Unicode MS', 'Segoe UI', 'Arial', sans-serif";
-
     const PIECES = {
-      'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 'p': '♟',
-      'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔', 'P': '♙'
+      'r': '\u265C', 'n': '\u265E', 'b': '\u265D', 'q': '\u265B', 'k': '\u265A', 'p': '\u265F',
+      'R': '\u2656', 'N': '\u2658', 'B': '\u2657', 'Q': '\u2655', 'K': '\u2654', 'P': '\u2659'
     };
 
     let boardState = [
@@ -146,18 +154,15 @@
       fen += " " + castle;
       // 앙파상
       if (ep) {
-        // 앙파상 좌표를 algebraic notation으로 바꿈
         const files = "abcdefgh";
         fen += " " + files[ep.col] + (8-ep.row);
       } else {
         fen += " -";
       }
-      // halfmove clock, fullmove number은 0으로
       fen += " 0 1";
       return fen;
     }
 
-    // AI 턴이면 자동으로 두기
     function aiMoveIfNeeded() {
       if (promotionPending) return;
       if (currentTurn !== aiColor) return;
@@ -165,23 +170,17 @@
       stockfish.onmessage = function(event) {
         if (event && event.data && event.data.startsWith("bestmove")) {
           const move = event.data.split(" ")[1];
-          if(move === "(none)") return; // 무승부/체크메이트
-          // algebraic 좌표를 인덱스로 변환
+          if(move === "(none)") return;
           let from = move.substring(0,2), to = move.substring(2,4);
           const files = "abcdefgh";
           let fromCol = files.indexOf(from[0]);
           let fromRow = 8 - parseInt(from[1]);
           let toCol = files.indexOf(to[0]);
           let toRow = 8 - parseInt(to[1]);
-          // 프로모션 표기
           let promotion = move.length > 4 ? move[4] : null;
-          // 선택 후 이동
           selected = [fromRow, fromCol];
-          // 프로모션이면, move의 5번째 글자가 q/r/b/n
           if (promotion) {
-            // onSquareClick에서 promotionPending이 걸리고, renderPromotion에서 AI 선택(여기선 퀸)
             onSquareClick(toRow, toCol);
-            // 프로모션 패널 뜨면 자동으로 퀸 선택
             if (promotionPending) {
               let promoPiece = aiColor === "white" ? promotion.toUpperCase() : promotion.toLowerCase();
               boardState[promotionPending.row][promotionPending.col] = promoPiece;
@@ -238,22 +237,17 @@
         case 'p': {
           let dir = isWhite ? -1 : 1;
           let startRow = isWhite ? 6 : 1;
-          // 기본 한 칸
           if(inBounds(row+dir,col) && board[row+dir][col] === '') {
             moves.push([row+dir,col]);
-            // 첫 수 두 칸
             if(row === startRow && board[row+2*dir][col] === '') {
               moves.push([row+2*dir,col]);
             }
           }
-          // 잡기
           for(let dc of [-1,1]) {
             let nr = row+dir, nc = col+dc;
-            // 일반 잡기
             if(inBounds(nr,nc) && isOpponent(piece, board[nr][nc])) {
               moves.push([nr,nc]);
             }
-            // 앙파상
             if(enPassant && enPassant.row === row && enPassant.col === nc && nr === (isWhite?2:5)) {
               if(row === (isWhite?3:4)) moves.push([nr,nc,"enpassant"]);
             }
@@ -325,12 +319,9 @@
               moves.push([nr,nc]);
             }
           }
-          // 캐슬링 가능성 추가
           if(!ignoreCastle) {
             if(isWhite && !pieceMoved.K && row === 7 && col === 4) {
-              // 킹사이드(오른쪽)
               if(!pieceMoved.R7 && board[7][5] === '' && board[7][6] === '' && board[7][7] === 'R') {
-                // 체크가 안될 때만
                 if(
                   !isSquareAttacked(board, 7, 4, 'black') &&
                   !isSquareAttacked(board, 7, 5, 'black') &&
@@ -339,7 +330,6 @@
                   moves.push([7,6,"castle"]);
                 }
               }
-              // 퀸사이드(왼쪽)
               if(!pieceMoved.R0 && board[7][3] === '' && board[7][2] === '' && board[7][1] === '' && board[7][0] === 'R') {
                 if(
                   !isSquareAttacked(board, 7, 4, 'black') &&
@@ -351,7 +341,6 @@
               }
             }
             if(!isWhite && !pieceMoved.k && row === 0 && col === 4) {
-              // 킹사이드(오른쪽)
               if(!pieceMoved.r7 && board[0][5] === '' && board[0][6] === '' && board[0][7] === 'r') {
                 if(
                   !isSquareAttacked(board, 0, 4, 'white') &&
@@ -361,7 +350,6 @@
                   moves.push([0,6,"castle"]);
                 }
               }
-              // 퀸사이드(왼쪽)
               if(!pieceMoved.r0 && board[0][3] === '' && board[0][2] === '' && board[0][1] === '' && board[0][0] === 'r') {
                 if(
                   !isSquareAttacked(board, 0, 4, 'white') &&
@@ -428,21 +416,19 @@
         const [nr, nc, special] = m;
         let boardCopy = board.map(r => r.slice());
 
-        // 앙파상 처리
         if(special === "enpassant") {
           boardCopy[nr][nc] = boardCopy[row][col];
           boardCopy[row][col] = '';
           boardCopy[row][nc] = ''; 
         }
-        // 캐슬링 처리
         else if(special === "castle") {
           boardCopy[nr][nc] = boardCopy[row][col];
           boardCopy[row][col] = '';
           if(color === "white") {
-            if(nc === 6) { // 킹사이드
+            if(nc === 6) {
               boardCopy[7][5] = boardCopy[7][7];
               boardCopy[7][7] = '';
-            } else { // 퀸사이드
+            } else {
               boardCopy[7][3] = boardCopy[7][0];
               boardCopy[7][0] = '';
             }
@@ -456,7 +442,6 @@
             }
           }
         }
-        // 일반
         else {
           boardCopy[nr][nc] = boardCopy[row][col];
           boardCopy[row][col] = '';
@@ -490,7 +475,6 @@
 
     function renderBoard() {
       boardEl.innerHTML = "";
-      // 하이라이트 칸 계산
       let highlights = [];
       if(selected) {
         highlights = getLegalMovesWithCheck(selected[0], selected[1], boardState).map(m => [m[0], m[1]]);
@@ -504,14 +488,12 @@
           else square.classList.add("black");
 
           const piece = boardState[row][col];
-          // 기물 표시: PIECES에 있으면 해당 이모지로, 없으면 빈칸
           square.textContent = piece && PIECES[piece] ? PIECES[piece] : "";
 
           if(selected && selected[0] === row && selected[1] === col) {
             square.classList.add("selected");
           }
 
-          // 캐슬링 가능 표시
           if(selected) {
             const moves = getLegalMovesWithCheck(selected[0], selected[1], boardState);
             for(let m of moves) {
@@ -519,7 +501,6 @@
                 square.classList.add("castle");
             }
           }
-          // 하이라이트 표시
           if(highlightSquares.some(([r, c]) => r === row && c === col)) {
             square.classList.add("highlight");
           }
@@ -535,9 +516,7 @@
         }
       }
       renderTurn();
-      // 프로모션 UI
       renderPromotion();
-      // AI 턴 체크
       setTimeout(aiMoveIfNeeded, 400);
     }
 
@@ -573,7 +552,7 @@
     }
 
     function onSquareClick(row, col) {
-      if(promotionPending) return; // 프로모션 대기 중엔 클릭 불가
+      if(promotionPending) return;
 
       const piece = boardState[row][col];
 
@@ -593,25 +572,22 @@
         for(const m of legalMoves) {
           const [r, c, special] = m;
           if(r === row && c === col) {
-            // 이동 전 상태
             const movingPiece = boardState[selected[0]][selected[1]];
-            // 앙파상 처리
             if(special === "enpassant") {
               boardState[row][col] = movingPiece;
               boardState[selected[0]][selected[1]] = '';
               boardState[selected[0]][col] = '';
               enPassant = null;
             }
-            // 캐슬링 처리
             else if(special === "castle") {
               boardState[row][col] = movingPiece;
               boardState[selected[0]][selected[1]] = '';
               if(currentTurn === "white") {
-                if(col === 6) { // 킹사이드
+                if(col === 6) {
                   boardState[7][5] = boardState[7][7];
                   boardState[7][7] = '';
                   pieceMoved.R7 = true;
-                } else { // 퀸사이드
+                } else {
                   boardState[7][3] = boardState[7][0];
                   boardState[7][0] = '';
                   pieceMoved.R0 = true;
@@ -631,11 +607,9 @@
               }
               enPassant = null;
             }
-            // 일반 이동
             else {
               boardState[row][col] = movingPiece;
               boardState[selected[0]][selected[1]] = '';
-              // 폰이 두 칸 움직였으면 앙파상 가능 위치 기록
               if(movingPiece === "P" && selected[0] === 6 && row === 4) {
                 enPassant = {row:4, col:col};
               } else if(movingPiece === "p" && selected[0] === 1 && row === 3) {
@@ -643,11 +617,9 @@
               } else {
                 enPassant = null;
               }
-              // 프로모션
               if((movingPiece === "P" && row === 0) || (movingPiece === "p" && row === 7)) {
                 promotionPending = {row, col, color: currentTurn};
               }
-              // 이동 이력(캐슬링)
               if(movingPiece === "K") pieceMoved.K = true;
               if(movingPiece === "k") pieceMoved.k = true;
               if(movingPiece === "R" && selected[0] === 7 && selected[1] === 0) pieceMoved.R0 = true;
@@ -658,13 +630,11 @@
 
             selected = null;
 
-            // 턴 넘김(프로모션 대기면 유지)
             if(!promotionPending) {
               currentTurn = currentTurn === 'white' ? 'black' : 'white';
             }
             renderBoard();
 
-            // 체크/체크메이트 판정
             if(!promotionPending && isKingInCheck(boardState, currentTurn)) {
               if(isCheckmate(boardState, currentTurn)) {
                 alert((currentTurn === 'white' ? '백' : '흑') + ' 체크메이트! 게임 종료');
@@ -675,7 +645,6 @@
             return;
           }
         }
-        // 자기 기물 선택
         if(piece && ((currentTurn === 'white' && isUpper(piece)) || (currentTurn === 'black' && isLower(piece)))) {
           selected = [row, col];
           renderBoard();
