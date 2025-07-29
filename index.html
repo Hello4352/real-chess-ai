@@ -67,6 +67,8 @@
   <div id="board"></div>
   <div id="promotionPanel" style="text-align:center; margin-top:20px;"></div>
 
+  <script src="path/to/stockfish.js"></script> 
+
   <script>
     const PIECES = {
       'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 'p': '♟',
@@ -505,7 +507,11 @@
       }
       renderTurn();
       renderPromotion();
-      setTimeout(aiMoveIfNeeded, 400);
+      // Only call aiMoveIfNeeded if the AI's turn, and after rendering is complete.
+      // This ensures that the board is fully rendered before AI attempts to move.
+      if (currentTurn === aiColor && !promotionPending) {
+        setTimeout(aiMoveIfNeeded, 400);
+      }
     }
 
     function renderPromotion() {
@@ -533,6 +539,7 @@
                 alert((currentTurn === 'white' ? '백' : '흑') + ' 체크입니다!');
               }
             }
+            setTimeout(aiMoveIfNeeded, 400);
           };
           panel.appendChild(btn);
         });
