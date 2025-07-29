@@ -2,16 +2,8 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>체스판 + 기물 + 엄격 이동 규칙 + 차례 관리 + 체크/체크메이트 + 앙파상 + 프로모션 + 캐슬링 + 하이라이트 + AI</title>
+  <title>ㅇㅇㅇ</title>
   <style>
-    @font-face {
-      font-family: 'NotoChess';
-      src: local('Noto Sans Symbols 2'), local('Segoe UI Symbol'), local('Arial Unicode MS'), local('Noto Color Emoji');
-      unicode-range: U+2654-265F;
-    }
-    body {
-      font-family: 'NotoChess', 'Segoe UI', 'Arial', sans-serif;
-    }
     #board {
       display: grid;
       grid-template-columns: repeat(8, 70px);
@@ -29,14 +21,11 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 54px;
+      font-size: 44px;
       cursor: pointer;
       transition: background-color 0.3s;
       border: 1px solid #555;
       box-sizing: border-box;
-      /* font-family: 'NotoChess', 'Segoe UI Symbol', 'Arial Unicode MS', 'Segoe UI', 'Arial', sans-serif; */
-      line-height: 1;
-      color: #222;
     }
     .white {
       background-color: #f0d9b5;
@@ -63,17 +52,15 @@
       border: 2px solid #0097a7; 
       background: #f0d9b5;
       display: inline-block;
-      font-family: 'NotoChess', 'Segoe UI Symbol', 'Arial Unicode MS', 'Segoe UI', 'Arial', sans-serif;
     }
     .highlight {
       box-shadow: 0 0 0 6px #ffeb3b inset;
     }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/stockfish@16.1.0/dist/stockfish.js"></script>
 </head>
 <body>
   <h1 style="text-align:center; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-    체스판 + 기물 + 엄격 이동 규칙 + 차례 관리 + 체크/체크메이트 + 앙파상 + 프로모션 + 캐슬링 + 하이라이트 + AI
+    체스판 + 기물 + 엄격 이동 규칙 + 차례 관리 + 체크/체크메이트 + 앙파상 + 프로모션 + 캐슬링 + 하이라이트
   </h1>
 
   <div id="turnIndicator" style="text-align:center; font-size:20px; margin-bottom:10px;"></div>
@@ -82,8 +69,8 @@
 
   <script>
     const PIECES = {
-      'r': '\u265C', 'n': '\u265E', 'b': '\u265D', 'q': '\u265B', 'k': '\u265A', 'p': '\u265F',
-      'R': '\u2656', 'N': '\u2658', 'B': '\u2657', 'Q': '\u2655', 'K': '\u2654', 'P': '\u2659'
+      'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 'p': '♟',
+      'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔', 'P': '♙'
     };
 
     let boardState = [
