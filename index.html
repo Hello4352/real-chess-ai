@@ -70,6 +70,9 @@
   <div id="promotionPanel" style="text-align:center; margin-top:20px;"></div>
 
   <script>
+    // 폰트가 이모지 체스 기물을 제대로 보여주지 않는 경우를 방지하기 위해 폰트 추가
+    document.body.style.fontFamily = "'Segoe UI Symbol', 'Noto Color Emoji', 'Arial Unicode MS', 'Segoe UI', 'Arial', sans-serif";
+
     const PIECES = {
       'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 'p': '♟',
       'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔', 'P': '♙'
@@ -501,7 +504,8 @@
           else square.classList.add("black");
 
           const piece = boardState[row][col];
-          if(piece) square.textContent = PIECES[piece];
+          // 기물 표시: PIECES에 있으면 해당 이모지로, 없으면 빈칸
+          square.textContent = piece && PIECES[piece] ? PIECES[piece] : "";
 
           if(selected && selected[0] === row && selected[1] === col) {
             square.classList.add("selected");
