@@ -780,8 +780,22 @@ let halfmoveClock = 0;
 
 /** Board normalization for repetition check */
 function normalizeBoard(board) {
-  // Only the position, not turn, not castling, not en passant
-  return board.map(row => row.join('')).join('/');
+  // Position + active color + castling rights + en passant target
+  // This matches FEN rules for repetition
+  let position = board.map(row => row.join('')).join('/');
+  let activeColor = currentTurn;
+  // Castling rights
+  let castling = '';
+  castling += pieceMoved.K === false ? 'K' : '';
+  castling += pieceMoved.R7 === false ? 'R' : '';
+  castling += pieceMoved.R0 === false ? 'L' : '';
+  castling += pieceMoved.k === false ? 'k' : '';
+  castling += pieceMoved.r7 === false ? 'r' : '';
+  castling += pieceMoved.r0 === false ? 'l' : '';
+  if (castling === '') castling = '-';
+  // En passant target
+  let ep = (typeof enPassant === 'object' && enPassant !== null) ? (String.fromCharCode('a'.charCodeAt(0)+enPassant.col)+(8-enPassant.row)) : '-';
+  return position + ' ' + activeColor + ' ' + castling + ' ' + ep;
 }
 
 /** Threefold repetition check */
@@ -814,9 +828,9 @@ function isStalemate(board, color) {
 }
 
 /** Draw check after each move */
-function checkDrawConditions(board, lastMovePiece, toR, toC, fromR, fromC) {
+function checkDrawConditions(board, lastMovePiece, toR, toC, fromR, fromC, specialMove) {
   // Threefold repetition
-  // update repetitionCount
+  // update repetitionCount (FEN-based, including turn/castling/en passant)
   const fen = normalizeBoard(board);
   repetitionCount[fen] = (repetitionCount[fen] || 0) + 1;
   if (checkThreefoldRepetition()) {
@@ -824,10 +838,11 @@ function checkDrawConditions(board, lastMovePiece, toR, toC, fromR, fromC) {
     return true;
   }
   // Fifty-move rule: increment if not pawn move or capture
-  // capture: if to-square was occupied (except by en passant, so lastMovePiece is pawn and toR != fromR)
   let capture = false;
-  if (fromR !== undefined && fromC !== undefined && toR !== undefined && toC !== undefined) {
-    if (board[toR][toC] !== '') capture = true;
+  if (specialMove === 'enpassant') {
+    capture = true;
+  } else if (fromR !== undefined && fromC !== undefined && toR !== undefined && toC !== undefined) {
+    if (board[toR][toC] !== '' && lastMovePiece && lastMovePiece.toLowerCase() !== 'p') capture = true;
     // en passant capture
     if (
       lastMovePiece &&
@@ -869,7 +884,7 @@ window.executeMove = function(fromR, fromC, toR, toC, specialMove) {
   // After move, update boardHistory/repetition/halfmoveClock
   const afterBoard = boardState.map(r => r.slice());
   boardHistory.push(normalizeBoard(afterBoard));
-  checkDrawConditions(afterBoard, movingPiece, toR, toC, fromR, fromC);
+  checkDrawConditions(afterBoard, movingPiece, toR, toC, fromR, fromC, specialMove);
 };
 
 /** For AI moves as well **/
@@ -880,7 +895,7 @@ window.makeAIMove = function() {
   const afterBoard = boardState.map(r => r.slice());
   boardHistory.push(normalizeBoard(afterBoard));
   // AI lastMovePiece and coords not tracked; draw will still update repetition/halfmove.
-  checkDrawConditions(afterBoard, '', -1, -1, -1, -1);
+  checkDrawConditions(afterBoard, '', -1, -1, -1, -1, '');
 };
 </script>
 </body>
