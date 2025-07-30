@@ -780,14 +780,16 @@ let halfmoveClock = 0;
 
 /** Board normalization for repetition check */
 function normalizeBoard(board) {
+  // Only the position, not turn, not castling, not en passant
   return board.map(row => row.join('')).join('/');
 }
 
 /** Threefold repetition check */
-function checkThreefoldRepetition(board) {
-  const fen = normalizeBoard(board);
-  repetitionCount[fen] = (repetitionCount[fen] || 0) + 1;
-  return repetitionCount[fen] >= 3;
+function checkThreefoldRepetition() {
+  for (const key in repetitionCount) {
+    if (repetitionCount[key] >= 3) return true;
+  }
+  return false;
 }
 
 /** Fifty-move rule check */
@@ -814,15 +816,32 @@ function isStalemate(board, color) {
 /** Draw check after each move */
 function checkDrawConditions(board, lastMovePiece, toR, toC, fromR, fromC) {
   // Threefold repetition
-  if (checkThreefoldRepetition(board)) {
+  // update repetitionCount
+  const fen = normalizeBoard(board);
+  repetitionCount[fen] = (repetitionCount[fen] || 0) + 1;
+  if (checkThreefoldRepetition()) {
     setTimeout(() => alert('3수 동형 무승부! 게임 종료'), 100);
     return true;
   }
   // Fifty-move rule: increment if not pawn move or capture
-  if (
-    !lastMovePiece.toLowerCase().includes('p') && // not a pawn move
-    board[toR][toC] === '' // not a capture
-  ) {
+  // capture: if to-square was occupied (except by en passant, so lastMovePiece is pawn and toR != fromR)
+  let capture = false;
+  if (fromR !== undefined && fromC !== undefined && toR !== undefined && toC !== undefined) {
+    if (board[toR][toC] !== '') capture = true;
+    // en passant capture
+    if (
+      lastMovePiece &&
+      lastMovePiece.toLowerCase() === 'p' &&
+      Math.abs(toC - fromC) === 1 &&
+      board[toR][toC] === '' &&
+      Math.abs(toR - fromR) === 1
+    ) {
+      capture = true;
+    }
+  }
+  // pawn move
+  let pawnMove = lastMovePiece && lastMovePiece.toLowerCase() === 'p';
+  if (!pawnMove && !capture) {
     halfmoveClock++;
   } else {
     halfmoveClock = 0;
@@ -843,7 +862,6 @@ function checkDrawConditions(board, lastMovePiece, toR, toC, fromR, fromC) {
 const orig_executeMove = window.executeMove;
 window.executeMove = function(fromR, fromC, toR, toC, specialMove) {
   // Save board history before the move
-  const beforeBoard = boardState.map(r => r.slice());
   const movingPiece = boardState[fromR][fromC];
 
   orig_executeMove.apply(this, arguments);
@@ -861,6 +879,7 @@ window.makeAIMove = function() {
   // After AI move, update boardHistory/repetition/halfmoveClock
   const afterBoard = boardState.map(r => r.slice());
   boardHistory.push(normalizeBoard(afterBoard));
+  // AI lastMovePiece and coords not tracked; draw will still update repetition/halfmove.
   checkDrawConditions(afterBoard, '', -1, -1, -1, -1);
 };
 </script>
