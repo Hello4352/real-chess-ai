@@ -772,5 +772,97 @@
         }
     });
   </script>
+<script>
+/** --- DRAW RULES STATE --- **/
+let boardHistory = [];
+let repetitionCount = {};
+let halfmoveClock = 0;
+
+/** Board normalization for repetition check */
+function normalizeBoard(board) {
+  return board.map(row => row.join('')).join('/');
+}
+
+/** Threefold repetition check */
+function checkThreefoldRepetition(board) {
+  const fen = normalizeBoard(board);
+  repetitionCount[fen] = (repetitionCount[fen] || 0) + 1;
+  return repetitionCount[fen] >= 3;
+}
+
+/** Fifty-move rule check */
+function checkFiftyMoveRule() {
+  return halfmoveClock >= 100; // 50 moves per side = 100 halfmoves
+}
+
+/** Stalemate check: no legal moves, not in check */
+function isStalemate(board, color) {
+  if (isKingInCheck(board, color)) return false;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const piece = board[r][c];
+      if (!piece) continue;
+      if ((color === 'white' && isUpper(piece)) || (color === 'black' && isLower(piece))) {
+        const moves = getLegalMovesWithCheck(r, c, board);
+        if (moves.length > 0) return false;
+      }
+    }
+  }
+  return true;
+}
+
+/** Draw check after each move */
+function checkDrawConditions(board, lastMovePiece, toR, toC, fromR, fromC) {
+  // Threefold repetition
+  if (checkThreefoldRepetition(board)) {
+    setTimeout(() => alert('3수 동형 무승부! 게임 종료'), 100);
+    return true;
+  }
+  // Fifty-move rule: increment if not pawn move or capture
+  if (
+    !lastMovePiece.toLowerCase().includes('p') && // not a pawn move
+    board[toR][toC] === '' // not a capture
+  ) {
+    halfmoveClock++;
+  } else {
+    halfmoveClock = 0;
+  }
+  if (checkFiftyMoveRule()) {
+    setTimeout(() => alert('50수 무승부! 게임 종료'), 100);
+    return true;
+  }
+  // Stalemate
+  if (isStalemate(board, currentTurn)) {
+    setTimeout(() => alert('스테일메이트! 무승부! 게임 종료'), 100);
+    return true;
+  }
+  return false;
+}
+
+/** --- HOOK DRAW CHECKS into move execution --- **/
+const orig_executeMove = window.executeMove;
+window.executeMove = function(fromR, fromC, toR, toC, specialMove) {
+  // Save board history before the move
+  const beforeBoard = boardState.map(r => r.slice());
+  const movingPiece = boardState[fromR][fromC];
+
+  orig_executeMove.apply(this, arguments);
+
+  // After move, update boardHistory/repetition/halfmoveClock
+  const afterBoard = boardState.map(r => r.slice());
+  boardHistory.push(normalizeBoard(afterBoard));
+  checkDrawConditions(afterBoard, movingPiece, toR, toC, fromR, fromC);
+};
+
+/** For AI moves as well **/
+const orig_makeAIMove = window.makeAIMove;
+window.makeAIMove = function() {
+  orig_makeAIMove.apply(this, arguments);
+  // After AI move, update boardHistory/repetition/halfmoveClock
+  const afterBoard = boardState.map(r => r.slice());
+  boardHistory.push(normalizeBoard(afterBoard));
+  checkDrawConditions(afterBoard, '', -1, -1, -1, -1);
+};
+</script>
 </body>
 </html>
