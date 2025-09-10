@@ -60,7 +60,7 @@
 </head>
 <body>
   <h1 style="text-align:center; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-    체스판 + 기물 + 엄격 이동 규칙 + 차례 관리 + 체크/체크메이트 + 앙파상 + 프로모션 + 캐슬링 + 하이라이트
+    체스 ai
   </h1>
 
   <div id="turnIndicator" style="text-align:center; font-size:20px; margin-bottom:10px;"></div>
@@ -773,130 +773,5 @@
     });
   </script>
 <script>
-/** --- DRAW RULES STATE --- **/
-let boardHistory = [];
-let repetitionCount = {};
-let halfmoveClock = 0;
-
-/** Board normalization for repetition check */
-function normalizeBoard(board) {
-  // Position + active color + castling rights + en passant target
-  // This matches FEN rules for repetition
-  let position = board.map(row => row.join('')).join('/');
-  let activeColor = currentTurn;
-  // Castling rights
-  let castling = '';
-  castling += pieceMoved.K === false ? 'K' : '';
-  castling += pieceMoved.R7 === false ? 'R' : '';
-  castling += pieceMoved.R0 === false ? 'L' : '';
-  castling += pieceMoved.k === false ? 'k' : '';
-  castling += pieceMoved.r7 === false ? 'r' : '';
-  castling += pieceMoved.r0 === false ? 'l' : '';
-  if (castling === '') castling = '-';
-  // En passant target
-  let ep = (typeof enPassant === 'object' && enPassant !== null) ? (String.fromCharCode('a'.charCodeAt(0)+enPassant.col)+(8-enPassant.row)) : '-';
-  return position + ' ' + activeColor + ' ' + castling + ' ' + ep;
-}
-
-/** Threefold repetition check */
-function checkThreefoldRepetition() {
-  for (const key in repetitionCount) {
-    if (repetitionCount[key] >= 3) return true;
-  }
-  return false;
-}
-
-/** Fifty-move rule check */
-function checkFiftyMoveRule() {
-  return halfmoveClock >= 100; // 50 moves per side = 100 halfmoves
-}
-
-/** Stalemate check: no legal moves, not in check */
-function isStalemate(board, color) {
-  if (isKingInCheck(board, color)) return false;
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const piece = board[r][c];
-      if (!piece) continue;
-      if ((color === 'white' && isUpper(piece)) || (color === 'black' && isLower(piece))) {
-        const moves = getLegalMovesWithCheck(r, c, board);
-        if (moves.length > 0) return false;
-      }
-    }
-  }
-  return true;
-}
-
-/** Draw check after each move */
-function checkDrawConditions(board, lastMovePiece, toR, toC, fromR, fromC, specialMove) {
-  // Threefold repetition
-  // update repetitionCount (FEN-based, including turn/castling/en passant)
-  const fen = normalizeBoard(board);
-  repetitionCount[fen] = (repetitionCount[fen] || 0) + 1;
-  if (checkThreefoldRepetition()) {
-    setTimeout(() => alert('3수 동형 무승부! 게임 종료'), 100);
-    return true;
-  }
-  // Fifty-move rule: increment if not pawn move or capture
-  let capture = false;
-  if (specialMove === 'enpassant') {
-    capture = true;
-  } else if (fromR !== undefined && fromC !== undefined && toR !== undefined && toC !== undefined) {
-    if (board[toR][toC] !== '' && lastMovePiece && lastMovePiece.toLowerCase() !== 'p') capture = true;
-    // en passant capture
-    if (
-      lastMovePiece &&
-      lastMovePiece.toLowerCase() === 'p' &&
-      Math.abs(toC - fromC) === 1 &&
-      board[toR][toC] === '' &&
-      Math.abs(toR - fromR) === 1
-    ) {
-      capture = true;
-    }
-  }
-  // pawn move
-  let pawnMove = lastMovePiece && lastMovePiece.toLowerCase() === 'p';
-  if (!pawnMove && !capture) {
-    halfmoveClock++;
-  } else {
-    halfmoveClock = 0;
-  }
-  if (checkFiftyMoveRule()) {
-    setTimeout(() => alert('50수 무승부! 게임 종료'), 100);
-    return true;
-  }
-  // Stalemate
-  if (isStalemate(board, currentTurn)) {
-    setTimeout(() => alert('스테일메이트! 무승부! 게임 종료'), 100);
-    return true;
-  }
-  return false;
-}
-
-/** --- HOOK DRAW CHECKS into move execution --- **/
-const orig_executeMove = window.executeMove;
-window.executeMove = function(fromR, fromC, toR, toC, specialMove) {
-  // Save board history before the move
-  const movingPiece = boardState[fromR][fromC];
-
-  orig_executeMove.apply(this, arguments);
-
-  // After move, update boardHistory/repetition/halfmoveClock
-  const afterBoard = boardState.map(r => r.slice());
-  boardHistory.push(normalizeBoard(afterBoard));
-  checkDrawConditions(afterBoard, movingPiece, toR, toC, fromR, fromC, specialMove);
-};
-
-/** For AI moves as well **/
-const orig_makeAIMove = window.makeAIMove;
-window.makeAIMove = function() {
-  orig_makeAIMove.apply(this, arguments);
-  // After AI move, update boardHistory/repetition/halfmoveClock
-  const afterBoard = boardState.map(r => r.slice());
-  boardHistory.push(normalizeBoard(afterBoard));
-  // AI lastMovePiece and coords not tracked; draw will still update repetition/halfmove.
-  checkDrawConditions(afterBoard, '', -1, -1, -1, -1, '');
-};
-</script>
 </body>
 </html>
